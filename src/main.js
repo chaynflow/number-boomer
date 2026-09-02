@@ -32,13 +32,13 @@ const state = {
   moveCount: 0,
   gameOver: false,
 
-  // 爆炸期间锁定棋盘。
+  // 防止爆炸动画期间重复点击
   isResolving: false,
 
-  // 当前高亮的爆炸格子。
+  // 当前正在高亮的爆炸格子
   explodingCells: new Set(),
 
-  // 重新开始时让旧的异步动画立即失效。
+  // 重新开始时取消上一局尚未结束的异步动画
   roundId: 0,
 };
 
@@ -135,7 +135,6 @@ async function play(row, col) {
 
   const result = await resolveExplosions(player, roundId);
 
-  // 等待动画时，玩家可能已经重新开始了游戏。
   if (result.cancelled || roundId !== state.roundId) {
     return;
   }
@@ -146,10 +145,12 @@ async function play(row, col) {
   if (result.winner !== null) {
     state.gameOver = true;
     render();
+
     setMessage(
       `${PLAYER_NAMES[result.winner]}获胜！点击“重新开始”再玩一局。`,
       true,
     );
+
     return;
   }
 
@@ -158,11 +159,10 @@ async function play(row, col) {
     render();
 
     setMessage(
-      result.reason === "overload"
-        ? "棋盘上的数字总量已经超过可稳定上限，本局判为平局。"
-        : "连锁爆炸进入了重复循环，本局判为平局。",
+      "本局数字无法稳定，判定为平局。",
       false,
     );
+
     return;
   }
 
@@ -303,6 +303,16 @@ function createCellKey(row, col) {
   return `${row}:${col}`;
 }
 
+function createCellLabel(row, col, cell) {
+  const position = `${row + 1} 行 ${col + 1} 列`;
+
+  if (cell.owner === null) {
+    return `${position}，空格，数字 ${cell.value}`;
+  }
+
+  return `${position}，${PLAYER_NAMES[cell.owner]}，数字 ${cell.value}`;
+}
+
 function getUnstableCells() {
   const unstableCells = [];
 
@@ -318,6 +328,9 @@ function getUnstableCells() {
 
   return unstableCells;
 }
+
+
+
 
 function createBoardSignature() {
   return state.board
@@ -399,38 +412,17 @@ function render() {
   renderTurn();
   renderScore();
 }
-const cellKey = createCellKey(row, col);
-const isExploding = state.explodingCells.has(cellKey);
-
-button.type = "button";
-button.className = "cell";
-
-if (playerColor) {
-  button.classList.add(`owner-${playerColor}`);
-}
-
-if (isExploding) {
-  button.classList.add("exploding");
-}
-
-button.dataset.row = String(row);
-button.dataset.col = String(col);
-button.textContent = cell.value > 0 ? String(cell.value) : "";
-
-button.disabled =
-  state.gameOver ||
-  state.isResolving ||
-  !canPlayCell(row, col, state.currentPlayer);
-
 function renderBoard() {
-  boardElement.setAttribute(
-  "aria-busy",
-  state.isResolving ? "true" : "false",
-);
-  boardElement.style.setProperty("--board-size", state.size);
+  boardElement.style.setProperty("--board-size", String(state.size));
+
   boardElement.setAttribute(
     "aria-label",
     `${state.size} × ${state.size} Number Boomer 游戏棋盘`,
+  );
+
+  boardElement.setAttribute(
+    "aria-busy",
+    state.isResolving ? "true" : "false",
   );
 
   const fragment = document.createDocumentFragment();
@@ -439,18 +431,30 @@ function renderBoard() {
     for (let col = 0; col < state.size; col += 1) {
       const cell = state.board[row][col];
       const button = document.createElement("button");
-      const playerColor =
-        cell.owner === null ? "" : PLAYER_COLORS[cell.owner];
+      const cellKey = createCellKey(row, col);
 
       button.type = "button";
-      button.className = `cell ${
-        playerColor ? `owner-${playerColor}` : ""
-      }`;
+      button.className = "cell";
+
+      if (cell.owner === PLAYERS.RED) {
+        button.classList.add("owner-red");
+      } else if (cell.owner === PLAYERS.BLUE) {
+        button.classList.add("owner-blue");
+      }
+
+      if (state.explodingCells.has(cellKey)) {
+        button.classList.add("exploding");
+      }
+
       button.dataset.row = String(row);
       button.dataset.col = String(col);
       button.textContent = cell.value > 0 ? String(cell.value) : "";
+
       button.disabled =
-        state.gameOver || !canPlayCell(row, col, state.currentPlayer);
+        state.gameOver ||
+        state.isResolving ||
+        !canPlayCell(row, col, state.currentPlayer);
+
       button.setAttribute(
         "aria-label",
         createCellLabel(row, col, cell),
@@ -463,15 +467,6 @@ function renderBoard() {
   boardElement.replaceChildren(fragment);
 }
 
-function createCellLabel(row, col, cell) {
-  const position = `${row + 1} 行 ${col + 1} 列`;
-
-  if (cell.owner === null) {
-    return `${position}，空格，数字 0`;
-  }
-
-  return `${position}，${PLAYER_NAMES[cell.owner]}，数字 ${cell.value}`;
-}
 
 function renderTurn() {
   const playerName = PLAYER_NAMES[state.currentPlayer];
@@ -510,7 +505,12 @@ function startNewGame(size = DEFAULT_SIZE) {
   state.explodingCells = new Set();
 
   boardSizeSelect.value = String(size);
-  setMessage("红方先手，请选择一个红方格子。", false);
+
+  setMessage(
+    "红方先手，请选择一个红方格子。",
+    false,
+  );
+
   render();
 }
 
