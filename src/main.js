@@ -24,13 +24,22 @@ const blueScoreElement = document.querySelector("#blue-score");
 const messageElement = document.querySelector("#message");
 const restartButton = document.querySelector("#restart-button");
 const boardSizeSelect = document.querySelector("#board-size");
-
+const EXPLOSION_HIGHLIGHT_MS = 500;
 const state = {
   size: DEFAULT_SIZE,
   board: [],
   currentPlayer: PLAYERS.RED,
   moveCount: 0,
   gameOver: false,
+
+  // 爆炸期间锁定棋盘。
+  isResolving: false,
+
+  // 当前高亮的爆炸格子。
+  explodingCells: new Set(),
+
+  // 重新开始时让旧的异步动画立即失效。
+  roundId: 0,
 };
 
 /**
@@ -101,8 +110,8 @@ function canPlayCell(row, col, player) {
 /**
  * 执行一次落子，并处理整个连锁反应。
  */
-function play(row, col) {
-  if (state.gameOver) {
+async function play(row, col) {
+  if (state.gameOver || state.isResolving) {
     return;
   }
 
@@ -112,25 +121,55 @@ function play(row, col) {
   }
 
   const player = state.currentPlayer;
+  const roundId = state.roundId;
   const cell = state.board[row][col];
 
   cell.value += 1;
   cell.owner = player;
 
   state.moveCount += 1;
+  state.isResolving = true;
 
-  resolveExplosions(row, col, player);
+  render();
+  setMessage("正在处理连锁爆炸……", false);
 
-  const winner = getWinner();
-  if (winner !== null) {
+  const result = await resolveExplosions(player, roundId);
+
+  // 等待动画时，玩家可能已经重新开始了游戏。
+  if (result.cancelled || roundId !== state.roundId) {
+    return;
+  }
+
+  state.isResolving = false;
+  state.explodingCells = new Set();
+
+  if (result.winner !== null) {
     state.gameOver = true;
     render();
-    setMessage(`${PLAYER_NAMES[winner]}获胜！点击“重新开始”再玩一局。`, true);
+    setMessage(
+      `${PLAYER_NAMES[result.winner]}获胜！点击“重新开始”再玩一局。`,
+      true,
+    );
+    return;
+  }
+
+  if (result.unstable) {
+    state.gameOver = true;
+    render();
+
+    setMessage(
+      result.reason === "overload"
+        ? "棋盘上的数字总量已经超过可稳定上限，本局判为平局。"
+        : "连锁爆炸进入了重复循环，本局判为平局。",
+      false,
+    );
     return;
   }
 
   state.currentPlayer =
-    state.currentPlayer === PLAYERS.RED ? PLAYERS.BLUE : PLAYERS.RED;
+    state.currentPlayer === PLAYERS.RED
+      ? PLAYERS.BLUE
+      : PLAYERS.RED;
 
   render();
 }
@@ -144,57 +183,162 @@ function play(row, col) {
  * 3. 爆炸产生的邻居继续进入队列；
  * 4. 直到所有格子都稳定为止。
  */
-function resolveExplosions(startRow, startCol, player) {
-  const queue = [[startRow, startCol]];
-  let queueIndex = 0;
+async function resolveExplosions(player, roundId) {
+  const seenStates = new Set();
 
-  while (queueIndex < queue.length) {
-    const [row, col] = queue[queueIndex];
-    queueIndex += 1;
+  while (true) {
+    const unstableCells = getUnstableCells();
 
-    const cell = state.board[row][col];
-    const neighbors = getNeighbors(row, col);
-    const threshold = neighbors.length;
-
-    // 用户定义的规则是“数字 > 临界值”时爆炸。
-    if (cell.value <= threshold) {
-      continue;
+    // 所有格子都已稳定，连锁结束。
+    if (unstableCells.length === 0) {
+      return {
+        winner: null,
+        unstable: false,
+        cancelled: false,
+      };
     }
 
-    // 记录本次爆炸的归属者。
-    // 由于点击和连锁传递都会设置 owner，这里通常就是当前玩家。
-    const explosionOwner = cell.owner ?? player;
+    // 同一棋盘状态再次出现，说明爆炸已经进入循环。
+    const signature = createBoardSignature();
 
-    // 当前格子减少它的临界值。
-    cell.value -= threshold;
-
-    // 如果减少后为 0，则该格子暂时变为空格。
-    if (cell.value === 0) {
-      cell.owner = null;
+    if (seenStates.has(signature)) {
+      return {
+        winner: null,
+        unstable: true,
+        reason: "cycle",
+        cancelled: false,
+      };
     }
 
-    // 向上下左右的邻居各增加 1，并转移占领权。
-    for (const [neighborRow, neighborCol] of neighbors) {
-      const neighbor = state.board[neighborRow][neighborCol];
+    seenStates.add(signature);
 
-      neighbor.value += 1;
-      neighbor.owner = explosionOwner;
+    // 当前波次的所有爆炸格子一起高亮。
+    state.explodingCells = new Set(
+      unstableCells.map(({ row, col }) => createCellKey(row, col)),
+    );
 
-      const neighborThreshold = getThreshold(
-        neighborRow,
-        neighborCol,
-      );
+    renderBoard();
 
-      if (neighbor.value > neighborThreshold) {
-        queue.push([neighborRow, neighborCol]);
+    await wait(EXPLOSION_HIGHLIGHT_MS);
+
+    // 重新开始或切换棋盘后，停止旧动画。
+    if (roundId !== state.roundId) {
+      return {
+        winner: null,
+        unstable: false,
+        cancelled: true,
+      };
+    }
+
+    // 先保存本波爆炸信息，避免修改棋盘后丢失阈值。
+    const explosions = unstableCells.map(({ row, col }) => ({
+      row,
+      col,
+      threshold: getThreshold(row, col),
+    }));
+
+    // 第一阶段：所有爆炸格子减去各自的临界值。
+    for (const { row, col, threshold } of explosions) {
+      const cell = state.board[row][col];
+
+      cell.value -= threshold;
+
+      if (cell.value === 0) {
+        cell.owner = null;
       }
     }
 
-    // 如果当前格子减少后仍然超过临界值，继续处理它。
-    if (cell.value > threshold) {
-      queue.push([row, col]);
+    // 第二阶段：向四连通邻居传播。
+    for (const { row, col } of explosions) {
+      const neighbors = getNeighbors(row, col);
+
+      for (const [neighborRow, neighborCol] of neighbors) {
+        const neighbor = state.board[neighborRow][neighborCol];
+
+        neighbor.value += 1;
+        neighbor.owner = player;
+      }
+    }
+
+    state.explodingCells = new Set();
+
+    // 每一波爆炸后立即更新棋盘和分数。
+    renderBoard();
+    renderScore();
+
+    // 关键修复：不要等整个连锁结束后才判断胜负。
+    const winner = getWinner();
+
+    if (winner !== null) {
+      return {
+        winner,
+        unstable: false,
+        cancelled: false,
+      };
+    }
+
+    /*
+     * 爆炸只重新分配数字，不会减少数字总量。
+     * 当总量超过所有格子的稳定容量时，棋盘不可能稳定，
+     * 必须结束游戏，避免无限爆炸。
+     */
+    if (isBoardOverloaded()) {
+      return {
+        winner: null,
+        unstable: true,
+        reason: "overload",
+        cancelled: false,
+      };
     }
   }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function createCellKey(row, col) {
+  return `${row}:${col}`;
+}
+
+function getUnstableCells() {
+  const unstableCells = [];
+
+  for (let row = 0; row < state.size; row += 1) {
+    for (let col = 0; col < state.size; col += 1) {
+      const cell = state.board[row][col];
+
+      if (cell.value > getThreshold(row, col)) {
+        unstableCells.push({ row, col });
+      }
+    }
+  }
+
+  return unstableCells;
+}
+
+function createBoardSignature() {
+  return state.board
+    .flatMap((row) =>
+      row.map((cell) => `${cell.owner ?? "n"}:${cell.value}`),
+    )
+    .join("|");
+}
+
+function isBoardOverloaded() {
+  let totalValue = 0;
+  let stableCapacity = 0;
+
+  for (let row = 0; row < state.size; row += 1) {
+    for (let col = 0; col < state.size; col += 1) {
+      totalValue += state.board[row][col].value;
+      stableCapacity += getThreshold(row, col);
+    }
+  }
+
+  return totalValue > stableCapacity;
 }
 
 /**
@@ -255,8 +399,34 @@ function render() {
   renderTurn();
   renderScore();
 }
+const cellKey = createCellKey(row, col);
+const isExploding = state.explodingCells.has(cellKey);
+
+button.type = "button";
+button.className = "cell";
+
+if (playerColor) {
+  button.classList.add(`owner-${playerColor}`);
+}
+
+if (isExploding) {
+  button.classList.add("exploding");
+}
+
+button.dataset.row = String(row);
+button.dataset.col = String(col);
+button.textContent = cell.value > 0 ? String(cell.value) : "";
+
+button.disabled =
+  state.gameOver ||
+  state.isResolving ||
+  !canPlayCell(row, col, state.currentPlayer);
 
 function renderBoard() {
+  boardElement.setAttribute(
+  "aria-busy",
+  state.isResolving ? "true" : "false",
+);
   boardElement.style.setProperty("--board-size", state.size);
   boardElement.setAttribute(
     "aria-label",
@@ -330,11 +500,14 @@ function setMessage(text, isWinMessage) {
  * 开始一局新游戏。
  */
 function startNewGame(size = DEFAULT_SIZE) {
+  state.roundId += 1;
   state.size = size;
   state.board = createBoard(size);
   state.currentPlayer = PLAYERS.RED;
   state.moveCount = 0;
   state.gameOver = false;
+  state.isResolving = false;
+  state.explodingCells = new Set();
 
   boardSizeSelect.value = String(size);
   setMessage("红方先手，请选择一个红方格子。", false);
@@ -355,7 +528,7 @@ boardElement.addEventListener("click", (event) => {
   const row = Number(cellButton.dataset.row);
   const col = Number(cellButton.dataset.col);
 
-  play(row, col);
+  void play(row, col);
 });
 
 restartButton.addEventListener("click", () => {
