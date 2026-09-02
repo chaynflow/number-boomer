@@ -1,0 +1,15 @@
+{
+  "name": "number-boomer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "一个基于数字连锁爆炸规则的本地双人小游戏",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

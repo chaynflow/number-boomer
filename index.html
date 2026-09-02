@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Number Boomer 本地双人数字连锁爆炸游戏"
+    />
+    <title>Number Boomer</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">LOCAL TWO-PLAYER GAME</p>
+          <h1>Number Boomer</h1>
+          <p class="subtitle">
+            让数字超过格子的临界值，引发连锁爆炸，占领整个棋盘。
+          </p>
+        </div>
+
+        <div class="header-actions">
+          <label class="size-control" for="board-size">
+            棋盘大小
+            <select id="board-size">
+              <option value="6">6 × 6</option>
+              <option value="8" selected>8 × 8</option>
+              <option value="10">10 × 10</option>
+            </select>
+          </label>
+
+          <button id="restart-button" class="secondary-button" type="button">
+            重新开始
+          </button>
+        </div>
+      </header>
+
+      <section class="game-panel" aria-label="游戏区域">
+        <div class="game-info">
+          <div class="turn-panel">
+            <span class="info-label">当前回合</span>
+            <strong id="turn-label" class="turn-label red-text">红方</strong>
+          </div>
+
+          <div class="score-panel">
+            <div class="score red-score">
+              <span class="player-dot red-dot"></span>
+              <span>红方</span>
+              <strong id="red-score">0</strong>
+            </div>
+
+            <div class="score blue-score">
+              <span class="player-dot blue-dot"></span>
+              <span>蓝方</span>
+              <strong id="blue-score">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div id="message" class="message" role="status" aria-live="polite">
+          红方先手，请选择一个红方格子。
+        </div>
+
+        <div
+          id="board"
+          class="board"
+          aria-label="Number Boomer 游戏棋盘"
+        ></div>
+
+        <div class="rules">
+          <h2>玩法说明</h2>
+          <ul>
+            <li>轮流点击一个空格或自己已经占领的格子。</li>
+            <li>每次点击会让该格数字增加 1。</li>
+            <li>角落格子的临界值是 2，边缘格子是 3，中间格子是 4。</li>
+            <li>数字大于临界值后，该格会向上下左右传递 1。</li>
+            <li>连锁爆炸中被传递到的格子会归当前玩家所有。</li>
+            <li>当一名玩家占领整个棋盘时，该玩家获胜。</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>纯本地运行 · 无需联网</span>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
