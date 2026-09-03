@@ -17,7 +17,10 @@ const PLAYER_COLORS = {
 };
 
 const DEFAULT_SIZE = 8;
-
+const OPENING_MODES = {
+  CLASSIC: "classic",
+  RANDOM: "random",
+};
 const boardElement = document.querySelector("#board");
 const turnLabelElement = document.querySelector("#turn-label");
 const redScoreElement = document.querySelector("#red-score");
@@ -25,6 +28,7 @@ const blueScoreElement = document.querySelector("#blue-score");
 const messageElement = document.querySelector("#message");
 const restartButton = document.querySelector("#restart-button");
 const boardSizeSelect = document.querySelector("#board-size");
+const openingModeSelect = document.querySelector("#opening-mode");
 const EXPLOSION_HIGHLIGHT_MS = 500;
 const state = {
   size: DEFAULT_SIZE,
@@ -41,13 +45,90 @@ const state = {
 
   // 重新开始时取消上一局尚未结束的异步动画
   roundId: 0,
+  openingMode: OPENING_MODES.CLASSIC,
 };
 
-/**
- * 创建一个指定大小的空棋盘。
- * 每个格子包含数字 value 和所属玩家 owner。
- */
-function createBoard(size) {
+function getBoardRegion(row, col, size) {
+  const isTopOrBottom =
+    row === 0 || row === size - 1;
+
+  const isLeftOrRight =
+    col === 0 || col === size - 1;
+
+  if (isTopOrBottom && isLeftOrRight) {
+    return "corners";
+  }
+
+  if (isTopOrBottom || isLeftOrRight) {
+    return "edges";
+  }
+
+  return "interior";
+}
+
+function assignBalancedOwners(board, positions) {
+  const shuffledPositions = shuffle(positions);
+
+  const firstPlayer =
+    randomInt(2) === 0
+      ? PLAYERS.RED
+      : PLAYERS.BLUE;
+
+  const secondPlayer =
+    firstPlayer === PLAYERS.RED
+      ? PLAYERS.BLUE
+      : PLAYERS.RED;
+
+  for (
+    let index = 0;
+    index < shuffledPositions.length;
+    index += 1
+  ) {
+    const [row, col] = shuffledPositions[index];
+
+    board[row][col].owner =
+      index % 2 === 0
+        ? firstPlayer
+        : secondPlayer;
+  }
+}
+
+function shuffle(items) {
+  const result = [...items];
+
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const targetIndex = randomInt(index + 1);
+
+    [result[index], result[targetIndex]] = [
+      result[targetIndex],
+      result[index],
+    ];
+  }
+
+  return result;
+}
+
+function randomInt(max) {
+  if (
+    globalThis.crypto &&
+    typeof globalThis.crypto.getRandomValues === "function"
+  ) {
+    const values = new Uint32Array(1);
+    const maxUint32 = 0x100000000;
+    const limit =
+      maxUint32 - (maxUint32 % max);
+
+    do {
+      globalThis.crypto.getRandomValues(values);
+    } while (values[0] >= limit);
+
+    return values[0] % max;
+  }
+
+  return Math.floor(Math.random() * max);
+}
+
+function createClassicBoard(size) {
   return Array.from({ length: size }, (_, row) =>
     Array.from({ length: size }, (_, col) => {
       const rowNumber = row + 1;
@@ -64,6 +145,45 @@ function createBoard(size) {
       };
     }),
   );
+}
+
+function createRandomBoard(size) {
+  const board = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => ({
+      value: 1,
+      owner: null,
+    })),
+  );
+
+  const regions = {
+    corners: [],
+    edges: [],
+    interior: [],
+  };
+
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const region = getBoardRegion(row, col, size);
+      regions[region].push([row, col]);
+    }
+  }
+
+  assignBalancedOwners(board, regions.corners);
+  assignBalancedOwners(board, regions.edges);
+  assignBalancedOwners(board, regions.interior);
+
+  return board;
+}
+
+function createBoard(
+  size,
+  openingMode = OPENING_MODES.CLASSIC,
+) {
+  if (openingMode === OPENING_MODES.RANDOM) {
+    return createRandomBoard(size);
+  }
+
+  return createClassicBoard(size);
 }
 
 /**
@@ -495,10 +615,14 @@ function setMessage(text, isWinMessage) {
 /**
  * 开始一局新游戏。
  */
-function startNewGame(size = DEFAULT_SIZE) {
+function startNewGame(
+  size = DEFAULT_SIZE,
+  openingMode = state.openingMode,
+) {
   state.roundId += 1;
   state.size = size;
-  state.board = createBoard(size);
+  state.openingMode = openingMode;
+  state.board = createBoard(size, openingMode);
   state.currentPlayer = PLAYERS.RED;
   state.moveCount = 0;
   state.gameOver = false;
@@ -507,11 +631,16 @@ function startNewGame(size = DEFAULT_SIZE) {
 
   boardSizeSelect.value = String(size);
 
-  setMessage(
-    "红方先手，请选择一个红方格子。",
-    false,
-  );
+  if (openingModeSelect) {
+    openingModeSelect.value = openingMode;
+  }
 
+  const openingMessage =
+    openingMode === OPENING_MODES.RANDOM
+      ? "随机开局：红方先手，请选择一个红方格子。"
+      : "经典开局：红方先手，请选择一个红方格子。";
+
+  setMessage(openingMessage, false);
   render();
 }
 
@@ -533,11 +662,27 @@ boardElement.addEventListener("click", (event) => {
 });
 
 restartButton.addEventListener("click", () => {
-  startNewGame(Number(boardSizeSelect.value));
+  startNewGame(
+    Number(boardSizeSelect.value),
+    openingModeSelect.value,
+  );
 });
 
 boardSizeSelect.addEventListener("change", () => {
-  startNewGame(Number(boardSizeSelect.value));
+  startNewGame(
+    Number(boardSizeSelect.value),
+    openingModeSelect.value,
+  );
 });
 
-startNewGame(DEFAULT_SIZE);
+openingModeSelect.addEventListener("change", () => {
+  startNewGame(
+    Number(boardSizeSelect.value),
+    openingModeSelect.value,
+  );
+});
+
+startNewGame(
+  DEFAULT_SIZE,
+  OPENING_MODES.CLASSIC,
+);

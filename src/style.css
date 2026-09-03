@@ -611,3 +611,23 @@ h1,
     width: 100%;
   }
 }
+
+#opening-mode {
+  min-width: 132px;
+}
+
+@media (max-width: 680px) {
+  .header-actions {
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .size-control,
+  .size-control select,
+  .header-actions .secondary-button {
+    width: 100%;
+    min-width: 0;
+  }
+}
