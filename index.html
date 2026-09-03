@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
+    <link rel="icon" href="data:," />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
@@ -11,7 +12,7 @@
   </head>
   <body>
     <main class="app">
-      <header class="page-header">
+      <header id="game-header" class="page-header" hidden>
         <div>
           <p class="eyebrow">LOCAL TWO-PLAYER GAME</p>
           <h1>Number Boomer</h1>
@@ -35,8 +36,85 @@
           </button>
         </div>
       </header>
+      <section
+        id="auth-view"
+        class="auth-view"
+        aria-labelledby="auth-title"
+      >
+        <div class="auth-card">
+          <div class="auth-heading">
+            <p class="eyebrow">ACCOUNT ACCESS</p>
+            <h2 id="auth-title">登录 Number Boomer</h2>
+            <p>登录后开始游戏。</p>
+          </div>
 
-      <section class="game-panel" aria-label="游戏区域">
+          <form id="auth-form" class="auth-form">
+            <label for="auth-email">
+              邮箱
+              <input
+                id="auth-email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                required
+              />
+            </label>
+
+            <label for="auth-password">
+              密码
+              <input
+                id="auth-password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                minlength="6"
+                required
+              />
+            </label>
+
+            <div class="auth-actions">
+              <button
+                class="primary-button"
+                type="submit"
+                data-auth-action="login"
+              >
+                登录
+              </button>
+
+              <button
+                class="secondary-button"
+                type="submit"
+                data-auth-action="register"
+              >
+                注册账号
+              </button>
+            </div>
+
+            <p
+              id="auth-message"
+              class="auth-message"
+              role="status"
+              aria-live="polite"
+            ></p>
+          </form>
+        </div>
+      </section>
+      <section
+        id="game-view"
+        class="game-panel"
+        aria-label="游戏区域"
+        hidden
+      >
+        <div class="user-bar">
+          <span>
+            当前账号：
+            <strong id="user-email"></strong>
+          </span>
+
+          <button id="logout-button" class="text-button" type="button">
+            退出登录
+          </button>
+        </div>
         <div class="game-info">
           <div class="turn-panel">
             <span class="info-label">当前回合</span>

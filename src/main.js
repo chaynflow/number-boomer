@@ -1,4 +1,5 @@
 import "./style.css";
+import "./auth.js";
 
 const PLAYERS = {
   RED: 0,
