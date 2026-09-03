@@ -14,7 +14,9 @@ const authMessage = document.querySelector("#auth-message");
 
 const userEmailElement = document.querySelector("#user-email");
 const logoutButton = document.querySelector("#logout-button");
-
+const resendConfirmationButton = document.querySelector(
+  "#resend-confirmation-button",
+);
 let submitting = false;
 
 function setAuthMessage(message, type = "normal") {
@@ -24,6 +26,15 @@ function setAuthMessage(message, type = "normal") {
 
   authMessage.textContent = message;
   authMessage.dataset.type = type;
+}
+
+function getAuthRedirectUrl() {
+  const url = new URL(window.location.href);
+
+  url.hash = "";
+  url.search = "";
+
+  return url.toString();
 }
 
 function setAuthSubmitting(value) {
@@ -99,8 +110,7 @@ async function login(email, password) {
 }
 
 async function register(email, password) {
-  const redirectUrl =
-    `${window.location.origin}${window.location.pathname}`;
+  const redirectUrl = getAuthRedirectUrl();
 
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -165,6 +175,23 @@ if (authForm) {
   });
 }
 
+async function resendConfirmation(email) {
+  const redirectUrl = getAuthRedirectUrl();
+
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: {
+      emailRedirectTo: redirectUrl,
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+
 if (logoutButton) {
   logoutButton.addEventListener("click", async () => {
     if (!supabase || submitting) {
@@ -180,6 +207,36 @@ if (logoutButton) {
     }
 
     logoutButton.disabled = false;
+  });
+}
+
+if (resendConfirmationButton) {
+  resendConfirmationButton.addEventListener("click", async () => {
+    if (!supabase || submitting) {
+      return;
+    }
+
+    const email = emailInput.value.trim();
+
+    if (!email) {
+      setAuthMessage("请先输入邮箱地址。", "error");
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthMessage("正在重新发送验证邮件……");
+
+    try {
+      await resendConfirmation(email);
+      setAuthMessage(
+        "验证邮件已重新发送，请使用最新邮件中的链接。",
+        "success",
+      );
+    } catch (error) {
+      setAuthMessage(getErrorMessage(error), "error");
+    } finally {
+      setSubmitting(false);
+    }
   });
 }
 
